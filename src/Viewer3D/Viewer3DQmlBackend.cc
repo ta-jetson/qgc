@@ -1,30 +1,33 @@
+/****************************************************************************
+ *
+ * (c) 2009-2024 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
+
 #include "Viewer3DQmlBackend.h"
-#include "QGCApplication.h"
 #include "SettingsManager.h"
 #include "MultiVehicleManager.h"
 #include "Vehicle.h"
 #include "Viewer3DSettings.h"
 #include "OsmParser.h"
 
-#define GPS_REF_NOT_SET                 0
-#define GPS_REF_SET_BY_MAP              1
-#define GPS_REF_SET_BY_VEHICLE          2
-
 Viewer3DQmlBackend::Viewer3DQmlBackend(QObject *parent)
     : QObject{parent}
+    , _viewer3DSettings(SettingsManager::instance()->viewer3DSettings())
 {
-    _gpsRefSet = GPS_REF_NOT_SET;
-    _activeVehicle = nullptr;
-    _viewer3DSettings = qgcApp()->toolbox()->settingsManager()->viewer3DSettings();
+
 }
 
 void Viewer3DQmlBackend::init(OsmParser* osmThr)
 {
     _osmParserThread = osmThr;
-    _activeVehicleChangedEvent(qgcApp()->toolbox()->multiVehicleManager()->activeVehicle());
+    _activeVehicleChangedEvent(MultiVehicleManager::instance()->activeVehicle());
 
     connect(_osmParserThread, &OsmParser::gpsRefChanged, this, &Viewer3DQmlBackend::_gpsRefChangedEvent);
-    connect(qgcApp()->toolbox()->multiVehicleManager(), &MultiVehicleManager::activeVehicleChanged, this, &Viewer3DQmlBackend::_activeVehicleChangedEvent);
+    connect(MultiVehicleManager::instance(), &MultiVehicleManager::activeVehicleChanged, this, &Viewer3DQmlBackend::_activeVehicleChangedEvent);
 }
 
 void Viewer3DQmlBackend::_activeVehicleChangedEvent(Vehicle *vehicle)

@@ -1,8 +1,16 @@
-#include "CityMapGeometry.h"
-#include "QGCApplication.h"
-#include "SettingsManager.h"
-#include "OsmParser.h"
+/****************************************************************************
+ *
+ * (c) 2009-2024 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
 
+#include "CityMapGeometry.h"
+#include "SettingsManager.h"
+#include "Viewer3DSettings.h"
+#include "OsmParser.h"
 
 CityMapGeometry::CityMapGeometry()
 {
@@ -11,7 +19,7 @@ CityMapGeometry::CityMapGeometry()
     _vertexData.clear();
     _mapLoadedFlag = 0;
 
-    _viewer3DSettings = qgcApp()->toolbox()->settingsManager()->viewer3DSettings();
+    _viewer3DSettings = SettingsManager::instance()->viewer3DSettings();
 
     setOsmFilePath(_viewer3DSettings->osmFilePath()->rawValue());
     connect(_viewer3DSettings->osmFilePath(), &Fact::rawValueChanged, this, &CityMapGeometry::setOsmFilePath);

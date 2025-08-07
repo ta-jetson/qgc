@@ -16,10 +16,10 @@ import QtQuick.Dialogs
 import QGroundControl
 import QGroundControl.ScreenTools
 import QGroundControl.Controls
-import QGroundControl.Palette
-import QGroundControl.Vehicle
-import QGroundControl.Controllers
-import QGroundControl.FactSystem
+
+
+
+
 import QGroundControl.FactControls
 
 Rectangle {
@@ -278,7 +278,7 @@ Rectangle {
                             onClicked: {
                                 _camera.trackingEnabled = !_camera.trackingEnabled;
                                 if (!_camera.trackingEnabled) {
-                                    !camera.stopTracking()
+                                    _camera.stopTracking()
                                 }
                             }
                         }

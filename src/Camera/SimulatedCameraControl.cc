@@ -8,59 +8,60 @@
  ****************************************************************************/
 
 #include "SimulatedCameraControl.h"
-#include "VideoManager.h"
+#include "FlyViewSettings.h"
 #include "QGCApplication.h"
+#include "QGCLoggingCategory.h"
 #include "SettingsManager.h"
 #include "Vehicle.h"
+#include "VideoManager.h"
 
-#include <QtQml/QQmlEngine>
+QGC_LOGGING_CATEGORY(SimulatedCameraControlLog, "qgc.camera.simulatedcameracontrol")
 
-//-----------------------------------------------------------------------------
-SimulatedCameraControl::SimulatedCameraControl(Vehicle* vehicle, QObject* parent)
-    : MavlinkCameraControl  (parent)
-    , _vehicle              (vehicle)
-    , _videoManager         (qgcApp()->toolbox()->videoManager())
+SimulatedCameraControl::SimulatedCameraControl(Vehicle *vehicle, QObject *parent)
+    : MavlinkCameraControl(vehicle, parent)
 {
-    QQmlEngine::setObjectOwnership(this, QQmlEngine::CppOwnership);
+    qCDebug(SimulatedCameraControlLog) << this;
 
-    connect(_videoManager, &VideoManager::recordingChanged, this, &SimulatedCameraControl::videoCaptureStatusChanged);
+    (void) connect(VideoManager::instance(), &VideoManager::recordingChanged, this, [this](bool recording) {
+        _videoCaptureStatus = recording ? VIDEO_CAPTURE_STATUS_RUNNING : VIDEO_CAPTURE_STATUS_STOPPED;
+        emit videoCaptureStatusChanged();
+    });
 
-    auto flyViewSettings = qgcApp()->toolbox()->settingsManager()->flyViewSettings();
-    connect(flyViewSettings->showSimpleCameraControl(), &Fact::rawValueChanged, this, &SimulatedCameraControl::infoChanged);
+    (void) connect(SettingsManager::instance()->flyViewSettings()->showSimpleCameraControl(), &Fact::rawValueChanged, this, &SimulatedCameraControl::infoChanged);
 
     _videoRecordTimeUpdateTimer.setInterval(1000);
-    connect(&_videoRecordTimeUpdateTimer, &QTimer::timeout, this, &SimulatedCameraControl::recordTimeChanged);
+    (void) connect(&_videoRecordTimeUpdateTimer, &QTimer::timeout, this, &SimulatedCameraControl::recordTimeChanged);
 }
 
 SimulatedCameraControl::~SimulatedCameraControl()
 {
-
+    qCDebug(SimulatedCameraControlLog) << this;
 }
 
-QString SimulatedCameraControl::recordTimeStr()
+QString SimulatedCameraControl::recordTimeStr() const
 {
     return QTime(0, 0).addMSecs(static_cast<int>(recordTime())).toString("hh:mm:ss");
 }
 
-SimulatedCameraControl::VideoCaptureStatus SimulatedCameraControl::videoCaptureStatus()
-{
-    return _videoCaptureStatus = _videoManager->recording() ? VIDEO_CAPTURE_STATUS_RUNNING : VIDEO_CAPTURE_STATUS_STOPPED;
-}
-
 void SimulatedCameraControl::setCameraMode(CameraMode mode)
 {
-    qCDebug(CameraControlLog) << "setCameraMode" << cameraModeToStr(mode);
+    qCDebug(CameraControlLog) << cameraModeToStr(mode);
 
-    if (hasModes()) {
-        if (mode == CAM_MODE_VIDEO) {
+    if (!hasModes()) {
+        qCWarning(CameraControlLog) << "called when camera does not support modes";
+        return;
+    }
+
+    switch (mode) {
+        case CAM_MODE_VIDEO:
             _setCameraMode(CAM_MODE_VIDEO);
-        } else if (mode == CAM_MODE_PHOTO) {
+            break;
+        case CAM_MODE_PHOTO:
             _setCameraMode(CAM_MODE_PHOTO);
-        } else {
-            qCWarning(CameraControlLog) << "setCameraMode invalid mode" << mode;
-        }
-    } else {
-        qCWarning(CameraControlLog) << "setCameraMode called when camera does not support modes";
+            break;
+        default:
+            qCWarning(CameraControlLog) << "invalid mode" << mode;
+            break;
     }
 }
 
@@ -74,7 +75,7 @@ void SimulatedCameraControl::_setCameraMode(CameraMode mode)
 
 void SimulatedCameraControl::toggleCameraMode()
 {
-    if(cameraMode() == CAM_MODE_PHOTO || cameraMode() == CAM_MODE_SURVEY) {
+    if ((cameraMode() == CAM_MODE_PHOTO) || (cameraMode() == CAM_MODE_SURVEY)) {
         setCameraModeVideo();
     } else if(cameraMode() == CAM_MODE_VIDEO) {
         setCameraModePhoto();
@@ -83,19 +84,13 @@ void SimulatedCameraControl::toggleCameraMode()
 
 bool SimulatedCameraControl::toggleVideoRecording()
 {
-    if(videoCaptureStatus() == VIDEO_CAPTURE_STATUS_RUNNING) {
-        return stopVideoRecording();
-    } else {
-        return startVideoRecording();
-    }
+    return ((videoCaptureStatus() == VIDEO_CAPTURE_STATUS_RUNNING) ? stopVideoRecording() : startVideoRecording());
 }
 
 void SimulatedCameraControl::setCameraModeVideo()
 {
-    qCDebug(CameraControlLog) << "setCameraModeVideo()";
-
     if (!hasModes()) {
-        qCWarning(CameraControlLog) << "setCameraModeVideo: Camera does not support modes";
+        qCWarning(CameraControlLog) << "Camera does not support modes";
         return;
     }
 
@@ -104,41 +99,43 @@ void SimulatedCameraControl::setCameraModeVideo()
 
 void SimulatedCameraControl::setCameraModePhoto()
 {
-    qCDebug(CameraControlLog) << "setCameraModePhoto()";
-
     if (!hasModes()) {
-        qCWarning(CameraControlLog) << "setCameraModePhoto: Camera does not support modes";
+        qCWarning(CameraControlLog) << "Camera does not support modes";
         return;
     }
 
     _setCameraMode(CAM_MODE_PHOTO);
 }
 
-
 bool SimulatedCameraControl::takePhoto()
 {
-    qCDebug(CameraControlLog) << "takePhoto()";
-
     if (!capturesPhotos()) {
-        qCWarning(CameraControlLog) << "takePhoto: Camera does not handle image capture";
+        qCWarning(CameraControlLog) << "Camera does not handle image capture";
         return false;
     }
+
     if (photoCaptureStatus() != PHOTO_CAPTURE_IDLE) {
         qCWarning(CameraControlLog) << "Camera not idle";
         return false;
     }
-    if (cameraMode() != CAM_MODE_PHOTO && cameraMode() != CAM_MODE_SURVEY) {
-        qCWarning(CameraControlLog) << "takePhoto: Camera not in correct mode:" << cameraModeToStr(cameraMode());
+
+    if ((cameraMode() != CAM_MODE_PHOTO) && (cameraMode() != CAM_MODE_SURVEY)) {
+        qCWarning(CameraControlLog) << "Camera not in correct mode:" << cameraModeToStr(cameraMode());
         return false;
     }
 
-    if (photoCaptureMode() == PHOTO_CAPTURE_SINGLE) {
+    switch (photoCaptureMode()) {
+    case PHOTO_CAPTURE_SINGLE:
         _vehicle->triggerSimpleCamera();
         _photoCaptureStatus = PHOTO_CAPTURE_IN_PROGRESS;
         emit photoCaptureStatusChanged();
         QTimer::singleShot(500, [this]() { _photoCaptureStatus = PHOTO_CAPTURE_IDLE; emit photoCaptureStatusChanged(); });
-    } else if (photoCaptureMode() == PHOTO_CAPTURE_TIMELAPSE) {
+        break;
+    case PHOTO_CAPTURE_TIMELAPSE:
         qgcApp()->showAppMessage(tr("Time lapse capture not supported by this camera"));
+        break;
+    default:
+        break;
     }
 
     return true;
@@ -146,73 +143,55 @@ bool SimulatedCameraControl::takePhoto()
 
 bool SimulatedCameraControl::startVideoRecording()
 {
-    qCDebug(CameraControlLog) << "startVideoRecording()";
-
     if (!capturesVideo()) {
-        qCWarning(CameraControlLog) << "startVideoRecording: Camera does not handle video capture";
+        qCWarning(CameraControlLog) << "Camera does not handle video capture";
         return false;
     }
     if (cameraMode() == CAM_MODE_PHOTO) {
-        qCWarning(CameraControlLog) << "startVideoRecording: Camera does not take video in photo mode";
+        qCWarning(CameraControlLog) << "Camera does not take video in photo mode";
         return false;
     }
-    if(videoCaptureStatus() == VIDEO_CAPTURE_STATUS_RUNNING) {
-        qCWarning(CameraControlLog) << "startVideoRecording: Camera already recording";
+    if (videoCaptureStatus() == VIDEO_CAPTURE_STATUS_RUNNING) {
+        qCWarning(CameraControlLog) << "Camera already recording";
         return false;
     }
 
     _videoRecordTimeUpdateTimer.start();
     _videoRecordTimeElapsedTimer.start();
-    _videoManager->startRecording();
+    VideoManager::instance()->startRecording();
     return false;
 }
 
 bool SimulatedCameraControl::stopVideoRecording()
 {
-    qCDebug(CameraControlLog) << "stopVideoRecording()";
-
-    if(videoCaptureStatus() != VIDEO_CAPTURE_STATUS_RUNNING) {
-        qCWarning(CameraControlLog) << "stopVideoRecording: Camera not recording";
+    if (videoCaptureStatus() != VIDEO_CAPTURE_STATUS_RUNNING) {
+        qCWarning(CameraControlLog) << "Camera not recording";
         return false;
     }
 
     _videoRecordTimeUpdateTimer.stop();
-    _videoManager->stopRecording();
+    VideoManager::instance()->stopRecording();
     return true;
 }
 
-quint32  SimulatedCameraControl::recordTime()
+quint32 SimulatedCameraControl::recordTime() const
 {
-    if (_videoRecordTimeUpdateTimer.isActive()) {
-        return _videoRecordTimeElapsedTimer.elapsed();
-    } else {
-        return 0;
-    }
+    return (_videoRecordTimeUpdateTimer.isActive() ? _videoRecordTimeElapsedTimer.elapsed() : 0);
 }
 
-bool SimulatedCameraControl::capturesVideo()
+bool SimulatedCameraControl::capturesVideo() const
 {
-    return _videoManager->hasVideo();
+    return VideoManager::instance()->hasVideo();
 }
 
-void SimulatedCameraControl::setPhotoLapse(double)
+bool SimulatedCameraControl::capturesPhotos() const
 {
-    // FIXME: NYI
+    return SettingsManager::instance()->flyViewSettings()->showSimpleCameraControl()->rawValue().toBool();
 }
 
-bool SimulatedCameraControl::capturesPhotos()
+bool SimulatedCameraControl::hasVideoStream() const
 {
-    return qgcApp()->toolbox()->settingsManager()->flyViewSettings()->showSimpleCameraControl()->rawValue().toBool();
-}
-
-bool SimulatedCameraControl::hasVideoStream()
-{
-    return _videoManager->hasVideo();
-}
-
-void SimulatedCameraControl::setPhotoLapseCount(int)
-{
-    // FIXME: NYI
+    return VideoManager::instance()->hasVideo();
 }
 
 void SimulatedCameraControl::setPhotoCaptureMode(MavlinkCameraControl::PhotoCaptureMode photoCaptureMode)
@@ -220,14 +199,5 @@ void SimulatedCameraControl::setPhotoCaptureMode(MavlinkCameraControl::PhotoCapt
     if (_photoCaptureMode != photoCaptureMode) {
         _photoCaptureMode = photoCaptureMode;
         emit photoCaptureModeChanged();
-    }
-}
-
-bool SimulatedCameraControl::hasModes()
-{
-    if (capturesPhotos() && capturesVideo()) {
-        return true;
-    } else {
-        return false;
     }
 }
